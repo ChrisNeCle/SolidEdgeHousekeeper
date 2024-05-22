@@ -6,10 +6,13 @@ Public Class TaskBreakPartCopyLinks
     
     Public Property BreakDesignCopies as Boolean
     Public Property BreakConstructionCopies as Boolean
+    
+    Public Property BreakInterpartCopies as Boolean
 
     Enum ControlNames
         BreakDesignCopies
         BreakConstructionCopies
+        BreakInterpartCopies
         HideOptions
     End Enum
     Public Sub New()
@@ -31,6 +34,7 @@ Public Class TaskBreakPartCopyLinks
         ' Options
         Me.BreakDesignCopies = False
         Me.BreakConstructionCopies = False
+        Me.BreakInterpartCopies = False
     End Sub
 
     Public Sub New(Task As TaskBreakPartCopyLinks)
@@ -38,6 +42,7 @@ Public Class TaskBreakPartCopyLinks
         'Options
         Me.BreakDesignCopies = Task.BreakDesignCopies
         Me.BreakConstructionCopies = Task.BreakConstructionCopies
+        Me.BreakInterpartCopies = Task.BreakInterpartCopies
     End Sub
 
     Public Overrides Function Process(
@@ -78,6 +83,8 @@ Public Class TaskBreakPartCopyLinks
         Dim CopiedPart As SolidEdgePart.CopiedPart
         Dim CopyConstructions As SolidEdgePart.CopyConstructions = Nothing
         Dim CopyConstruction As SolidEdgePart.CopyConstruction
+        Dim InterpartConstructions As SolidEdgePart.InterpartConstructions = Nothing
+        Dim InterpartConstruction As SolidEdgePart.InterpartConstruction
         Dim FileChanged As Boolean = False
 
         Dim TC As New Task_Common
@@ -88,11 +95,13 @@ Public Class TaskBreakPartCopyLinks
                 Dim tmpSEDoc = CType(SEDoc, SolidEdgePart.PartDocument)
                 Models = tmpSEDoc.Models
                 CopyConstructions = tmpSEDoc.Constructions.CopyConstructions
+                InterPartConstructions = tmpSEDoc.Constructions.InterpartConstructions
 
             Case = "psm"
                 Dim tmpSEDoc = CType(SEDoc, SolidEdgePart.SheetMetalDocument)
                 Models = tmpSEDoc.Models
                 CopyConstructions = tmpSEDoc.Constructions.CopyConstructions
+                InterPartConstructions = tmpSEDoc.Constructions.InterpartConstructions
 
             Case Else
                 MsgBox(String.Format("{0} DocType '{1}' not recognized", Me.Name, DocType), vbOKOnly)
@@ -145,6 +154,35 @@ Public Class TaskBreakPartCopyLinks
                         End If
                     Next
                 ElseIf CopyConstructions.Count >= 300 Then
+                    ExitStatus = 1
+                    ErrorMessageList.Add(String.Format("{0} models exceeds maximum to process", CopyConstructions.Count.ToString))
+                End If
+            End If
+        End If
+        
+        If BreakInterpartCopies Then
+            If Not InterpartConstructions Is Nothing Then
+                If (InterpartConstructions.Count > 0) And (InterpartConstructions.Count < 300) Then
+                    For Each InterpartConstruction in InterpartConstructions
+                        If InterpartConstruction.ModelingModeType = 2 Then
+                            ' InterpartConstruction.IsBroken is always False whether broken or not. Possible SE bug.
+'                            If Not InterpartConstruction.IsBroken Then
+'                                FileChanged = True
+'                                InterpartConstruction.BreakLinks()
+'                                SEApp.DoIdle()
+'                                InterpartConstruction.Update()
+'                                SEApp.DoIdle()
+'                            End If
+                            If Not InterpartConstruction.AsmSource is Nothing Then
+                                FileChanged = True
+                                InterpartConstruction.BreakLinks()
+                                SEApp.DoIdle()
+                                InterpartConstruction.Update()
+                                SEApp.DoIdle()
+                            End If
+                        End If
+                    Next
+                Else if (InterpartConstructions.Count > 300) Then
                     ExitStatus = 1
                     ErrorMessageList.Add(String.Format("{0} models exceeds maximum to process", CopyConstructions.Count.ToString))
                 End If
@@ -209,6 +247,14 @@ Public Class TaskBreakPartCopyLinks
 
         RowIndex += 1
         
+        CheckBox = IU.FormatOptionsCheckBox(ControlNames.BreakInterpartCopies.ToString, "Break inter-part copy links")
+        AddHandler CheckBox.CheckedChanged, AddressOf CheckBoxOptions_Check_Changed
+        tmpTLPOptions.Controls.Add(CheckBox, 0, RowIndex)
+        tmpTLPOptions.SetColumnSpan(CheckBox, 2)
+        ControlsDict(CheckBox.Name) = CheckBox
+
+        RowIndex += 1
+        
         CheckBox = IU.FormatOptionsCheckBox(ControlNames.HideOptions.ToString, ManualOptionsOnlyString)
         'CheckBox.Checked = True
         AddHandler CheckBox.CheckedChanged, AddressOf CheckBoxOptions_Check_Changed
@@ -227,6 +273,9 @@ Public Class TaskBreakPartCopyLinks
 
         CheckBox = CType(ControlsDict(ControlNames.BreakConstructionCopies.ToString), CheckBox)
         Me.BreakConstructionCopies = CheckBox.Checked
+        
+        CheckBox = CType(ControlsDict(ControlNames.BreakInterpartCopies.ToString), CheckBox)
+        Me.BreakInterpartCopies = CheckBox.Checked
         
         CheckBox = CType(ControlsDict(ControlNames.HideOptions.ToString), CheckBox)
         Me.AutoHideOptions = CheckBox.Checked
@@ -275,6 +324,9 @@ Public Class TaskBreakPartCopyLinks
 
             Case ControlNames.BreakConstructionCopies.ToString
                 Me.BreakConstructionCopies = Checkbox.Checked
+                
+            Case ControlNames.BreakInterpartCopies.ToString
+                Me.BreakInterpartCopies = Checkbox.Checked
                 
             Case ControlNames.HideOptions.ToString
                 HandleHideOptionsChange(Me, Me.TLPTask, Me.TLPOptions, Checkbox)
